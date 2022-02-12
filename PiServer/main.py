@@ -1,4 +1,8 @@
-from flask import Flask, render_template, Response, request
+from flask import Flask, render_template, Response, request, send_from_directory
+
+from flask_httpauth import HTTPBasicAuth
+from werkzeug.security import generate_password_hash, check_password_hash
+
 from camera import VideoCamera
 from gpiozero import Robot
 
@@ -6,15 +10,34 @@ import time
 import threading
 import os
 
+users = {
+    "rajeevan": generate_password_hash("865865")
+}
+
 pi_camera = VideoCamera(flip=False)
 robo_car = Robot((17, 27), (10, 9))
 
 app = Flask(__name__)
+auth = HTTPBasicAuth()
+
+
+@auth.verify_password
+def verify_password(username, password):
+    if username in users and \
+            check_password_hash(users.get(username), password):
+        return username
 
 
 @app.route('/')
+@auth.login_required
 def index():
     return render_template('index.html')
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 
 def gen(camera):
@@ -25,12 +48,14 @@ def gen(camera):
 
 
 @app.route('/video_feed')
+@auth.login_required
 def video_feed():
     return Response(gen(pi_camera),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @app.route('/robot')
+@auth.login_required
 def robot():
     args = request.args
     speed = min(max(float(args.get('speed')), -1), 1)
@@ -60,4 +85,4 @@ def robot():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=False)
+    app.run(host='0.0.0.0', debug=False, ssl_context=('cert.pem', 'key.pem'))
